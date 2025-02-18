@@ -1,1 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>数据测试</title>
+    <script src="JS/Vue3.5.13.js"></script>
+    <script src="JS/axios.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
 
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .total-amount {
+            font-size: 2.5rem;
+            color: #2c3e50;
+            margin: 1rem 0;
+            font-weight: bold;
+        }
+
+        .update-time {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+
+        .loading {
+            color: #3498db;
+        }
+
+        .error {
+            color: #e74c3c;
+        }
+
+        .market-detail {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+
+        .market-item {
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            min-width: 120px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="container">
+            <!-- By DeepSeek -->
+            <h1>两市成交总金额</h1>
+            
+            <div v-if="loading" class="loading">数据加载中...</div>
+            
+            <div v-if="error" class="error">
+                错误: {{ error }}
+                <button @click="fetchData">重试</button>
+            </div>
+
+            <div v-if="!loading && !error">
+                <div class="total-amount">
+                    {{ formatAmount(totalAmount) }} 亿元
+                </div>
+                
+                <div class="market-detail">
+                    <div class="market-item">
+                        <div>沪市成交</div>
+                        <div>{{ formatAmount(shAmount) }} 亿</div>
+                    </div>
+                    <div class="market-item">
+                        <div>深市成交</div>
+                        <div>{{ formatAmount(szAmount) }} 亿</div>
+                    </div>
+                </div>
+
+                <div class="update-time">
+                    最后更新: {{ lastUpdateTime }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+
+       
+
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    loading: true,
+                    error: null,
+                    totalAmount: 0,
+                    shAmount: 0,  // 沪市成交额
+                    szAmount: 0,  // 深市成交额
+                    lastUpdateTime: null
+                }
+            },
+            mounted() {
+                this.fetchData();
+                // 每10秒自动刷新
+                this.timer = setInterval(this.fetchData, 10000);
+            },
+            beforeUnmount() {
+                clearInterval(this.timer);
+            },
+            methods: {
+                async fetchData() {
+                    try {
+                        this.loading = true;
+                        this.error = null;
+                        
+                        // 请求上证指数(sh000001)和深证成指(sz399001)
+                        const response = await axios.get(
+                            'https://qt.gtimg.cn/q=sh000001,sz399001',
+                            { responseType: 'text' }
+                        );
+                        
+                        this.parseData(response.data);
+                    } catch (err) {
+                        this.error = '数据获取失败，请检查网络连接';
+                        console.error('API请求错误:', err);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                parseData(rawData) {
+                    try {
+                        // 解码处理
+                        const decodedData = decodeURIComponent(rawData)
+                            .replace(/\\n/g, '')
+                            .replace(/\\/g, '');
+                        
+                        // 提取沪市和深市数据
+                        const shMatch = decodedData.match(/v_sh000001="([^"]+)"/);
+                        const szMatch = decodedData.match(/v_sz399001="([^"]+)"/);
+
+                        //console.log(shMatch+" "+szMatch);
+
+                        if (!shMatch || !szMatch) {
+                            throw new Error('接口数据格式异常');
+                        }
+
+                        const shData = shMatch[1].split('~');
+                        const szData = szMatch[1].split('~');
+
+                        // 成交额在索引37位置（单位：万元）
+                        const shAmount = parseFloat(shData[37]) / 10000; // 转换为亿元
+                        const szAmount = parseFloat(szData[37]) / 10000; // 转换为亿元
+
+                        console.log(shAmount+" "+szAmount);
+
+                        this.shAmount = shAmount;
+                        this.szAmount = szAmount;
+                        this.totalAmount = shAmount + szAmount;
+                        
+                        // 更新时间（索引30）
+                        const timeStr = shData[30] || szData[30];
+                        this.lastUpdateTime = this.formatTime(timeStr);
+                    } catch (err) {
+                        this.error = '数据解析失败';
+                        console.error('解析错误:', err);
+                    }
+                },
+                formatTime(timeStr) {
+                    if (!timeStr) return '--';
+                    const date = timeStr.substr(0, 8);
+                    const time = timeStr.substr(8, 6);
+                    return `${date.substr(0,4)}-${date.substr(4,2)}-${date.substr(6,2)} ${time.substr(0,2)}:${time.substr(2,2)}:${time.substr(4,2)}`;
+                },
+                formatAmount(value) {
+                    return (value || 0).toLocaleString('zh-CN', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    });
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
